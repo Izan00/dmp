@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<launch>
+
+<group ns="cartesian">
+  <include file="$(find dmp)/launch/dmp.launch"/>
+</group>
+
+</launch>

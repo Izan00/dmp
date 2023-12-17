@@ -29,6 +29,14 @@ float64 dt
 # Number of times to loop in numerical integration.  This can generally be 1, unless dt is large (>1 second)
 int32 integrate_iter
 
+# Artificial potential filed parameters
+float64[] obstacle
+
+float64 beta
+
+float64 gamma
+
+
 ---
 
 # Returns a planned trajectory. 

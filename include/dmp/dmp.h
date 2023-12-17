@@ -54,6 +54,13 @@ namespace dmp{
 
 double calcPhase(const double curr_time, const double tau);
 
+void artificialPotentialFieldCoupling(std::vector<double> &apf_ct,
+									  const std::vector<double> &x,
+									  const std::vector<double> &v,
+									  const std::vector<double> &o, 
+									  double beta, 
+									  double gamma);
+
 void learnFromDemo(const DMPTraj &demo,
 				   const std::vector<double> &k_gains,
 				   const std::vector<double> &d_gains,
@@ -71,7 +78,9 @@ void generatePlan(const std::vector<DMPData> &dmp_list,
 				  const double &total_dt,
 				  const int &integrate_iter,
 				  DMPTraj &plan,
-				  uint8_t &at_goal);
-
+				  uint8_t &at_goal,
+				  std::vector<double> obstacle,
+				  double beta,
+				  double gamma);
 }
 #endif /* DMP_H_ */

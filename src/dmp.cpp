@@ -42,6 +42,10 @@
 #include "dmp/dmp.h"
 using namespace std;
 
+#include <iostream>
+#include <cmath>
+#include <Eigen/Dense>
+
 namespace dmp{
 
 #define MAX_PLAN_LENGTH 1000
@@ -88,7 +92,8 @@ void learnFromDemo(const DMPTraj &demo,
 	double *v_dot_demo = new double[n_pts];
 	double *f_domain = new double[n_pts];
 	double *f_targets = new double[n_pts];
-	FunctionApprox *f_approx = new LinearApprox();
+	//FunctionApprox *f_approx = new LinearApprox();
+	FunctionApprox *f_approx = new FourierApprox(num_bases);
 
 	//Compute the DMP weights for each DOF separately
 	for(int d=0; d<dims; d++){
@@ -140,6 +145,39 @@ void learnFromDemo(const DMPTraj &demo,
 	delete f_approx;
 }
 
+double epsilon = 1e-10;
+
+/**
+ * @ Compute the coupling term of the artificial potential field for obstacle avoidance
+ * @param[out] apf_ct artificial potential field coupling acceleration
+ * @param[in] x The (n-dim) previous state
+ * @param[in] v The (n-dim) previous instantaneous change in state
+ * @param[in] o (3-dim) obstacle state vector
+ * @param[in] beta angle coeficient, adjust influence of the angle in the coupling term
+ * @param[in] gamma potential field amplitude
+ */
+void artificialPotentialFieldCoupling(vector<double> &apf_ct,
+									  const vector<double> &x,
+									  const vector<double> &v,
+									  const vector<double> &o, double beta, double gamma) 
+{
+
+        Eigen::Vector3d o_e(o[0], o[1], o[2]); 
+		Eigen::Vector3d x_e(x[0], x[1], x[2]); 
+		Eigen::Vector3d v_e(v[0], v[1], v[2]); 
+
+		Eigen::Vector3d obstacle_diff = o_e - x_e;
+        double r = 0.5 * M_PI * (obstacle_diff.cross(v_e)).norm();
+        Eigen::Matrix3d R = Eigen::AngleAxisd(r, obstacle_diff.cross(v_e).normalized()).toRotationMatrix();
+        double theta = std::acos(obstacle_diff.dot(v_e) /
+                                 (obstacle_diff.norm() * v_e.norm() + epsilon));
+        Eigen::Vector3d apf_ct_e = gamma * R * v_e * theta * std::exp(-beta * theta);
+
+		apf_ct.push_back(apf_ct_e.x());
+		apf_ct.push_back(apf_ct_e.y());
+		apf_ct.push_back(apf_ct_e.z());
+}
+
 
 
 /**
@@ -147,15 +185,22 @@ void learnFromDemo(const DMPTraj &demo,
  * @param[in] dmp_list An n-dim list of DMPs that are all linked by a single canonical (phase) system
  * @param[in] x_0 The (n-dim) starting state for planning
  * @param[in] x_dot_0 The (n-dim) starting instantaneous change in state for planning
- * @param[in] t_0 The time in seconds at which to begin the planning segment. Should only be nonzero when doing a partial segment plan that does not start at beginning of DMP
+ * @param[in] t_0 The time in seconds at which to begin the planning segment. Should only be nonzero when doing
+              a partial segment plan that does not start at beginning of DMP
  * @param[in] goal The (n-dim) goal point for planning
- * @param[in] goal_thresh Planning will continue until system is within the specified threshold of goal in each dimension
+ * @param[in] goal_thresh Planning will continue until system is within the specified threshold of goal
+              in each dimension
  * @param[in] seg_length The length of the requested plan segment in seconds. Set to -1 if plan until goal is desired.
- * @param[in] tau The time scaling constant (in this implementation, it is the desired length of the TOTAL (not just this segment) DMP execution in seconds)
+ * @param[in] tau The time scaling constant (in this implementation, it is the desired length of the TOTAL
+              (not just this segment) DMP execution in seconds)
  * @param[in] total_dt The desired time resolution of the plan
  * @param[in] integrate_iter The number of loops used when numerically integrating accelerations
  * @param[out] plan An n-dim plan starting from x_0
- * @param[out] at_goal True if the final time is greater than tau AND the planned position is within goal_thresh of the goal
+ * @param[out] at_goal True if the final time is greater than tau AND the planned position is within goal_thresh
+               of the goal		   
+ * @param[in] obstacle (3-dim) obstacle state vector
+ * @param[in] beta angle coeficient, adjust influence of the angle in the coupling term
+ * @param[in] gamma potential field amplitude
  */
 void generatePlan(const vector<DMPData> &dmp_list,
 				  const vector<double> &x_0,
@@ -168,7 +213,10 @@ void generatePlan(const vector<DMPData> &dmp_list,
 				  const double &total_dt,
 				  const int &integrate_iter,
 				  DMPTraj &plan,
-				  uint8_t &at_goal)
+				  uint8_t &at_goal, 
+				  vector<double> obstacle,
+				  double beta,
+				  double gamma)
 {
 	plan.points.clear();
 	plan.times.clear();
@@ -185,10 +233,13 @@ void generatePlan(const vector<DMPData> &dmp_list,
 	FunctionApprox **f = new FunctionApprox*[dims];
 
 	for(int i=0; i<dims; i++)
-		f[i] = new LinearApprox(dmp_list[i].f_domain, dmp_list[i].f_targets);
-	
+		f[i] = new FourierApprox(dmp_list[i].weights);
+		//f[i] = new LinearApprox(dmp_list[i].f_domain, dmp_list[i].f_targets);
+
 	double t = 0;
 	double f_eval;
+
+	std:vector<double> x_avd,v_avd;
 
 	//Plan for at least tau seconds.  After that, plan until goal_thresh is satisfied.
 	//Cut off if plan exceeds MAX_PLAN_LENGTH seconds, in case of overshoot / oscillation
@@ -200,6 +251,30 @@ void generatePlan(const vector<DMPData> &dmp_list,
 			if (t > seg_length) seg_end = true;
 		}
 
+		// Artificial potential filed coupling
+		std::vector<double> apf_ct;
+		if(obstacle.size()>0 && (dims==3 || dims==6)){
+			apf_ct.clear();
+			std::cout<<obstacle[0]<<" "<< obstacle[1]<<" "<< obstacle[2]<<std::endl;
+			if(n_pts==0){
+				x_avd={x_0[0],x_0[1],x_0[2]};
+				v_avd={x_dot_0[0],x_dot_0[1],x_dot_0[2]};
+			}
+			else{
+				x_avd={x_vecs[0][n_pts-1],x_vecs[1][n_pts-1],x_vecs[2][n_pts-1]};
+				v_avd={x_dot_vecs[0][n_pts-1]*tau,x_dot_vecs[1][n_pts-1]*tau,x_dot_vecs[2][n_pts-1]*tau};
+			}
+
+			artificialPotentialFieldCoupling(apf_ct,x_avd,v_avd, obstacle, beta ,gamma);
+			if(dims==6)
+				apf_ct.resize(6,0.0);
+		}		
+		else{
+			apf_ct=std::vector<double>(dims,0.0);
+		}
+
+		std::cout<<apf_ct[0]<<" "<< apf_ct[1]<<" "<< apf_ct[2]<<std::endl;
+		
 		//Plan in each dimension
 		for(int i=0; i<dims; i++){
             double x,v;
@@ -210,7 +285,7 @@ void generatePlan(const vector<DMPData> &dmp_list,
             else{			
                 x = x_vecs[i][n_pts-1];
 			    v = x_dot_vecs[i][n_pts-1] * tau;
-            }
+			}
 
 			//Numerically integrate to get new x and v
 			for(int iter=0; iter<integrate_iter; iter++)
@@ -227,7 +302,9 @@ void generatePlan(const vector<DMPData> &dmp_list,
 				}
 				
 				//Update v dot and x dot based on DMP differential equations
-				double v_dot = (dmp_list[i].k_gain*((goal[i]-x) - (goal[i]-x_0[i])*s + f_eval) - dmp_list[i].d_gain*v) / tau;
+				double v_dot = (dmp_list[i].k_gain*((goal[i]-x) - (goal[i]-x_0[i])*s + f_eval) - dmp_list[i].d_gain*v + apf_ct[i]) / tau;
+				//double v_dot = (dmp_list[i].k_gain*((goal[i]-x) - (goal[i]-x_0[i])*s + f_eval) - dmp_list[i].d_gain*v) / tau;
+				
 				double x_dot = v/tau;
 
 				//Update state variables
@@ -279,4 +356,3 @@ void generatePlan(const vector<DMPData> &dmp_list,
 }
 
 }
-
