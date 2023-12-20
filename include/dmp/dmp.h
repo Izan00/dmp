@@ -54,12 +54,19 @@ namespace dmp{
 
 double calcPhase(const double curr_time, const double tau);
 
+Eigen::Vector3d calculateCentroid(const Eigen::MatrixXd& points);
+
+Eigen::MatrixXd verticesVectorToEigen(const std::vector<std::vector<double>>& vertices);
+
+Eigen::Vector3d nearestObjectPoint(const Eigen::MatrixXd& vertices_matrix, const  Eigen::Vector3d& path_point);
+
 void artificialPotentialFieldCoupling(std::vector<double> &apf_ct,
 									  const std::vector<double> &x,
 									  const std::vector<double> &v,
-									  const std::vector<double> &o, 
-									  double beta, 
-									  double gamma);
+									  const std::vector<std::vector<double>> &o, 
+									  std::vector<double> &beta, 
+									  std::vector<double> &gamma,
+									  std::vector<double> &k);
 
 void learnFromDemo(const DMPTraj &demo,
 				   const std::vector<double> &k_gains,
@@ -79,8 +86,9 @@ void generatePlan(const std::vector<DMPData> &dmp_list,
 				  const int &integrate_iter,
 				  DMPTraj &plan,
 				  uint8_t &at_goal,
-				  std::vector<double> obstacle,
-				  double beta,
-				  double gamma);
+				  std::vector<std::vector<double>> obstacle,
+				  std::vector<double> beta,
+				  std::vector<double> gamma,
+				  std::vector<double>k);
 }
 #endif /* DMP_H_ */

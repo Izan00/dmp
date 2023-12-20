@@ -32,10 +32,11 @@ int32 integrate_iter
 # Artificial potential filed parameters
 float64[] obstacle
 
-float64 beta
+float64[] beta
 
-float64 gamma
+float64[] gamma
 
+float64[] k
 
 ---
 
