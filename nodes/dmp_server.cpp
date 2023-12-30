@@ -14,9 +14,15 @@ bool lfdCallback(LearnDMPFromDemo::Request  &req,
 bool planCallback(GetDMPPlan::Request  &req,
 			      GetDMPPlan::Response &res )
 {
+	std::vector<std::vector<double>> obstacle;
+	if (req.obstacle.size()>3)
+		for(int i=0; i<req.obstacle.size();i+=3)
+			obstacle.push_back(std::vector<double>{req.obstacle[i],req.obstacle[i+1],req.obstacle[i+2]});
+	else if(req.obstacle.size()==3)
+		obstacle.push_back(req.obstacle);
 	generatePlan(active_dmp_list, req.x_0, req.x_dot_0, req.t_0, req.goal, req.goal_thresh,
 			     req.seg_length, req.tau, req.dt, req.integrate_iter, res.plan, res.at_goal, 
-				 req.obstacle, req.beta, req.gamma);
+				 obstacle, req.beta, req.gamma, req.k);
 	return true;
 }
 

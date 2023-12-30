@@ -155,29 +155,109 @@ double epsilon = 1e-10;
  * @param[in] o (3-dim) obstacle state vector
  * @param[in] beta angle coeficient, adjust influence of the angle in the coupling term
  * @param[in] gamma potential field amplitude
+ * @param[in] k distance coeficient, adjust influence of the angle in the coupling term
  */
 void artificialPotentialFieldCoupling(vector<double> &apf_ct,
 									  const vector<double> &x,
 									  const vector<double> &v,
-									  const vector<double> &o, double beta, double gamma) 
+									  const vector<vector<double>> &o, 
+									  vector<double> &beta, 
+									  vector<double> &gamma,
+									  vector<double> &k) 
 {
 
-        Eigen::Vector3d o_e(o[0], o[1], o[2]); 
-		Eigen::Vector3d x_e(x[0], x[1], x[2]); 
-		Eigen::Vector3d v_e(v[0], v[1], v[2]); 
+	Eigen::Vector3d x_e(x[0], x[1], x[2]); 
+	Eigen::Vector3d v_e(v[0], v[1], v[2]); 
+	Eigen::Vector3d apf_ct_e;
+	if (o.size() > 1) {
+		//std::cout<<o[0]<<" "<< o[1]<<" "<< o[2]<<std::endl;
+		Eigen::Vector3d o_e(o[0][0], o[0][1], o[0][2]); 
+		Eigen::Vector3d o_diff = o_e - x_e;
+		double r = 0.5 * M_PI * (o_diff.cross(v_e)).norm();
+		Eigen::Matrix3d R = Eigen::AngleAxisd(r, o_diff.cross(v_e).normalized()).toRotationMatrix();
+		double theta = std::acos(o_diff.dot(v_e) /
+								(o_diff.norm() * v_e.norm() + epsilon));
+		apf_ct_e = gamma[0] * R * v_e * theta * std::exp(-beta[0] * theta) * std::exp(-k[0] * o_diff.norm());
+	}
+	else {
 
-		Eigen::Vector3d obstacle_diff = o_e - x_e;
-        double r = 0.5 * M_PI * (obstacle_diff.cross(v_e)).norm();
-        Eigen::Matrix3d R = Eigen::AngleAxisd(r, obstacle_diff.cross(v_e).normalized()).toRotationMatrix();
-        double theta = std::acos(obstacle_diff.dot(v_e) /
-                                 (obstacle_diff.norm() * v_e.norm() + epsilon));
-        Eigen::Vector3d apf_ct_e = gamma * R * v_e * theta * std::exp(-beta * theta);
+		Eigen::MatrixXd ov_e = verticesVectorToEigen(o);
+		Eigen::Vector3d oc_e = calculateCentroid(ov_e);
+		Eigen::Vector3d op_e = nearestObjectPoint(ov_e,x_e);
+		
+		if(beta.size()<3)
+			beta=std::vector<double>{beta[0],beta[0],beta[0]};
+		if(gamma.size()<3)
+			gamma=std::vector<double>{gamma[0],gamma[0],gamma[0]};
+		if(beta.size()<3)
+			k=std::vector<double>{k[0],k[0],k[0]};
 
-		apf_ct.push_back(apf_ct_e.x());
-		apf_ct.push_back(apf_ct_e.y());
-		apf_ct.push_back(apf_ct_e.z());
+		// Obstacle point coupling
+		Eigen::Vector3d o_diff = oc_e - x_e;
+		double theta_o = std::acos(o_diff.dot(v_e) /
+								(o_diff.norm() * v_e.norm() + epsilon));
+		double phi_o = theta_o * std::exp(-beta[0] * theta_o)*std::exp(-k[0] * o_diff.norm());
+
+		// Compute rotations
+		double r = 0.5 * M_PI * (o_diff.cross(v_e)).norm();
+		Eigen::Matrix3d R = Eigen::AngleAxisd(r, o_diff.cross(v_e).normalized()).toRotationMatrix();
+		
+
+		// Nearest point coupling (asumed colinear with centroid-path_point)
+		Eigen::Vector3d p_diff = op_e - x_e;
+		double theta_p = std::acos(p_diff.dot(v_e) /
+								(p_diff.norm() * v_e.norm() + epsilon));
+		double phi_p = theta_p * std::exp(-beta[0] * theta_p)*std::exp(-k[1] * p_diff.norm());
+
+		apf_ct_e = gamma[0]*R*v_e*phi_o + gamma[1]*R*v_e*phi_o + gamma[2]*R*v_e*std::exp(-k[2]*o_diff.norm());
+	}
+
+	apf_ct.push_back(apf_ct_e.x());
+	apf_ct.push_back(apf_ct_e.y());
+	apf_ct.push_back(apf_ct_e.z());
 }
 
+Eigen::Vector3d calculateCentroid(const Eigen::MatrixXd& points) 
+{
+    Eigen::Vector3d centroid(0.0, 0.0, 0.0);
+
+	 if (points.rows() > 0) {
+        for (int i = 0; i < points.cols(); ++i) {
+            centroid += points.col(i);
+        }
+        centroid /= points.cols();
+    }
+
+    return centroid;
+};
+
+Eigen::MatrixXd verticesVectorToEigen(const std::vector<vector<double>>& vertices)
+{
+	int num_rows = vertices.size();
+
+	Eigen::MatrixXd vertices_matrix(3, num_rows);
+
+	for (int i = 0; i < num_rows; ++i)
+		for (int j = 0; j < 3; ++j) 
+			vertices_matrix(j, i) = vertices[i][j];
+
+	return vertices_matrix;
+};
+
+Eigen::Vector3d nearestObjectPoint(const Eigen::MatrixXd& vertices_matrix, const  Eigen::Vector3d& path_point) 
+{	
+	// Calculate distances
+    Eigen::VectorXd distances = (vertices_matrix.colwise() - path_point).colwise().norm();
+
+	// Find the index of the minimum distance point
+	int index;
+    distances.minCoeff(&index);
+
+	// Get the nearest point
+    Eigen::Vector3d nearest_point = vertices_matrix.col(index);
+
+    return nearest_point;
+};
 
 
 /**
@@ -198,9 +278,10 @@ void artificialPotentialFieldCoupling(vector<double> &apf_ct,
  * @param[out] plan An n-dim plan starting from x_0
  * @param[out] at_goal True if the final time is greater than tau AND the planned position is within goal_thresh
                of the goal		   
- * @param[in] obstacle (3-dim) obstacle state vector
+ * @param[in] obstacle (1-dim(3-dim)) obstacle state vector or (n-dim(3-dim)) vertices vector
  * @param[in] beta angle coeficient, adjust influence of the angle in the coupling term
  * @param[in] gamma potential field amplitude
+ * @param[in] k distance coeficient, adjust influence of the angle in the coupling term
  */
 void generatePlan(const vector<DMPData> &dmp_list,
 				  const vector<double> &x_0,
@@ -214,9 +295,10 @@ void generatePlan(const vector<DMPData> &dmp_list,
 				  const int &integrate_iter,
 				  DMPTraj &plan,
 				  uint8_t &at_goal, 
-				  vector<double> obstacle,
-				  double beta,
-				  double gamma)
+				  vector<vector<double>> obstacle,
+				  vector<double> beta,
+				  vector<double> gamma,
+				  vector<double> k)
 {
 	plan.points.clear();
 	plan.times.clear();
@@ -239,7 +321,7 @@ void generatePlan(const vector<DMPData> &dmp_list,
 	double t = 0;
 	double f_eval;
 
-	std:vector<double> x_avd,v_avd;
+	vector<double> x_avd,v_avd;
 
 	//Plan for at least tau seconds.  After that, plan until goal_thresh is satisfied.
 	//Cut off if plan exceeds MAX_PLAN_LENGTH seconds, in case of overshoot / oscillation
@@ -255,7 +337,6 @@ void generatePlan(const vector<DMPData> &dmp_list,
 		std::vector<double> apf_ct;
 		if(obstacle.size()>0 && (dims==3 || dims==6)){
 			apf_ct.clear();
-			std::cout<<obstacle[0]<<" "<< obstacle[1]<<" "<< obstacle[2]<<std::endl;
 			if(n_pts==0){
 				x_avd={x_0[0],x_0[1],x_0[2]};
 				v_avd={x_dot_0[0],x_dot_0[1],x_dot_0[2]};
@@ -264,8 +345,7 @@ void generatePlan(const vector<DMPData> &dmp_list,
 				x_avd={x_vecs[0][n_pts-1],x_vecs[1][n_pts-1],x_vecs[2][n_pts-1]};
 				v_avd={x_dot_vecs[0][n_pts-1]*tau,x_dot_vecs[1][n_pts-1]*tau,x_dot_vecs[2][n_pts-1]*tau};
 			}
-
-			artificialPotentialFieldCoupling(apf_ct,x_avd,v_avd, obstacle, beta ,gamma);
+			artificialPotentialFieldCoupling(apf_ct,x_avd,v_avd, obstacle, beta ,gamma, k);
 			if(dims==6)
 				apf_ct.resize(6,0.0);
 		}		
@@ -273,7 +353,7 @@ void generatePlan(const vector<DMPData> &dmp_list,
 			apf_ct=std::vector<double>(dims,0.0);
 		}
 
-		std::cout<<apf_ct[0]<<" "<< apf_ct[1]<<" "<< apf_ct[2]<<std::endl;
+		//std::cout<<apf_ct[0]<<" "<< apf_ct[1]<<" "<< apf_ct[2]<<std::endl;
 		
 		//Plan in each dimension
 		for(int i=0; i<dims; i++){
