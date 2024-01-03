@@ -169,7 +169,7 @@ void artificialPotentialFieldCoupling(vector<double> &apf_ct,
 	Eigen::Vector3d x_e(x[0], x[1], x[2]); 
 	Eigen::Vector3d v_e(v[0], v[1], v[2]); 
 	Eigen::Vector3d apf_ct_e;
-	if (o.size() > 1) {
+	if (o.size()==1) {
 		//std::cout<<o[0]<<" "<< o[1]<<" "<< o[2]<<std::endl;
 		Eigen::Vector3d o_e(o[0][0], o[0][1], o[0][2]); 
 		Eigen::Vector3d o_diff = o_e - x_e;
@@ -185,6 +185,11 @@ void artificialPotentialFieldCoupling(vector<double> &apf_ct,
 		Eigen::Vector3d oc_e = calculateCentroid(ov_e);
 		Eigen::Vector3d op_e = nearestObjectPoint(ov_e,x_e);
 		
+		
+		//std::cout<<oc_e[0]<<" "<<oc_e[1]<<" "<<oc_e[2]<<std::endl;
+		//std::cout<<"beta:"<<beta[0]<<" gamma:"<<gamma[0]<<" k:"<<k[0];
+		//std::cout<<"beta:"<<beta[1]<<" gamma:"<<gamma[1]<<" k:"<<k[1]<<std::endl;
+
 		if(beta.size()<3)
 			beta=std::vector<double>{beta[0],beta[0],beta[0]};
 		if(gamma.size()<3)
@@ -192,24 +197,27 @@ void artificialPotentialFieldCoupling(vector<double> &apf_ct,
 		if(beta.size()<3)
 			k=std::vector<double>{k[0],k[0],k[0]};
 
-		// Obstacle point coupling
-		Eigen::Vector3d o_diff = oc_e - x_e;
-		double theta_o = std::acos(o_diff.dot(v_e) /
-								(o_diff.norm() * v_e.norm() + epsilon));
-		double phi_o = theta_o * std::exp(-beta[0] * theta_o)*std::exp(-k[0] * o_diff.norm());
-
-		// Compute rotations
-		double r = 0.5 * M_PI * (o_diff.cross(v_e)).norm();
-		Eigen::Matrix3d R = Eigen::AngleAxisd(r, o_diff.cross(v_e).normalized()).toRotationMatrix();
+		// Obstacle centroid point coupling
+		Eigen::Vector3d oc_diff = oc_e - x_e;
+		double r = 0.5 * M_PI * (oc_diff.cross(v_e)).norm();
+		Eigen::Matrix3d R = Eigen::AngleAxisd(r, oc_diff.cross(v_e).normalized()).toRotationMatrix();
+		double theta_o = std::acos(oc_diff.dot(v_e) /
+								(oc_diff.norm() * v_e.norm() + epsilon));
+		apf_ct_e = gamma[0] * R * v_e * theta_o * std::exp(-beta[0] * theta_o) * std::exp(-k[0] * oc_diff.norm());
 		
-
-		// Nearest point coupling (asumed colinear with centroid-path_point)
-		Eigen::Vector3d p_diff = op_e - x_e;
-		double theta_p = std::acos(p_diff.dot(v_e) /
-								(p_diff.norm() * v_e.norm() + epsilon));
-		double phi_p = theta_p * std::exp(-beta[0] * theta_p)*std::exp(-k[1] * p_diff.norm());
-
-		apf_ct_e = gamma[0]*R*v_e*phi_o + gamma[1]*R*v_e*phi_o + gamma[2]*R*v_e*std::exp(-k[2]*o_diff.norm());
+		// Nearest point coupling with angle(asumed colinear with centroid-path_point)
+		Eigen::Vector3d op_diff = op_e - x_e;
+		//std::cout<<"oc_d: "<<oc_diff.norm()<<"op_d: "<<op_diff.norm()<<std::endl;
+		double r_p = 0.5 * M_PI * (op_diff.cross(v_e)).norm();
+		Eigen::Matrix3d R_p = Eigen::AngleAxisd(r_p, op_diff.cross(v_e).normalized()).toRotationMatrix();
+		double theta_p = std::acos(op_diff.dot(v_e) /
+								(op_diff.norm() * v_e.norm() + epsilon));
+		//apf_ct_e += gamma[1] * R_p * v_e * theta_p * std::exp(-beta[1] * theta_p) * std::exp(-k[1] * op_diff.norm());
+		apf_ct_e += gamma[1] * R * v_e * theta_p * std::exp(-beta[1] * theta_p) * std::exp(-k[1] * op_diff.norm());
+	
+		// Obstacle centroid point without angle
+		apf_ct_e += gamma[2]*R*v_e*std::exp(-k[2]*op_diff.norm());
+		
 	}
 
 	apf_ct.push_back(apf_ct_e.x());
@@ -221,12 +229,10 @@ Eigen::Vector3d calculateCentroid(const Eigen::MatrixXd& points)
 {
     Eigen::Vector3d centroid(0.0, 0.0, 0.0);
 
-	 if (points.rows() > 0) {
-        for (int i = 0; i < points.cols(); ++i) {
-            centroid += points.col(i);
-        }
-        centroid /= points.cols();
-    }
+	for (int i = 0; i < points.rows(); ++i) {
+		centroid += points.row(i);
+	}
+	centroid /= points.rows();
 
     return centroid;
 };
@@ -235,11 +241,11 @@ Eigen::MatrixXd verticesVectorToEigen(const std::vector<vector<double>>& vertice
 {
 	int num_rows = vertices.size();
 
-	Eigen::MatrixXd vertices_matrix(3, num_rows);
+	Eigen::MatrixXd vertices_matrix(num_rows,3);
 
 	for (int i = 0; i < num_rows; ++i)
 		for (int j = 0; j < 3; ++j) 
-			vertices_matrix(j, i) = vertices[i][j];
+			vertices_matrix(i, j) = vertices[i][j];
 
 	return vertices_matrix;
 };
@@ -247,14 +253,16 @@ Eigen::MatrixXd verticesVectorToEigen(const std::vector<vector<double>>& vertice
 Eigen::Vector3d nearestObjectPoint(const Eigen::MatrixXd& vertices_matrix, const  Eigen::Vector3d& path_point) 
 {	
 	// Calculate distances
-    Eigen::VectorXd distances = (vertices_matrix.colwise() - path_point).colwise().norm();
+    Eigen::VectorXd distances = (vertices_matrix.rowwise() - path_point.transpose()).rowwise().norm();
 
 	// Find the index of the minimum distance point
-	int index;
-    distances.minCoeff(&index);
+	int index = 0;
+    double min_dist = distances.transpose().minCoeff(&index);
+	
+	//std::cout<<"min_dist: "<< min_dist<<" Id:"<<index<<std::endl;
 
 	// Get the nearest point
-    Eigen::Vector3d nearest_point = vertices_matrix.col(index);
+    Eigen::Vector3d nearest_point = vertices_matrix.row(index).transpose();
 
     return nearest_point;
 };
