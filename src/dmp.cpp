@@ -190,12 +190,12 @@ void artificialPotentialFieldCoupling(vector<double> &apf_ct,
 		//std::cout<<"beta:"<<beta[0]<<" gamma:"<<gamma[0]<<" k:"<<k[0];
 		//std::cout<<"beta:"<<beta[1]<<" gamma:"<<gamma[1]<<" k:"<<k[1]<<std::endl;
 
-		if(beta.size()<3)
-			beta=std::vector<double>{beta[0],beta[0],beta[0]};
+		if(beta.size()<2)
+			beta=std::vector<double>{beta[0],0.0};
 		if(gamma.size()<3)
-			gamma=std::vector<double>{gamma[0],gamma[0],gamma[0]};
-		if(beta.size()<3)
-			k=std::vector<double>{k[0],k[0],k[0]};
+			gamma=std::vector<double>{gamma[0],0.0,0.0};
+		if(k.size()<3)
+			k=std::vector<double>{k[0],0.0,0.0};
 
 		// Obstacle centroid point coupling
 		Eigen::Vector3d oc_diff = oc_e - x_e;
