@@ -66,7 +66,9 @@ void artificialPotentialFieldCoupling(std::vector<double> &apf_ct,
 									  const std::vector<std::vector<double>> &o, 
 									  std::vector<double> &beta, 
 									  std::vector<double> &gamma,
-									  std::vector<double> &k);
+									  std::vector<double> &k,
+									  double m,
+									  double n);
 
 void learnFromDemo(const DMPTraj &demo,
 				   const std::vector<double> &k_gains,
@@ -89,6 +91,14 @@ void generatePlan(const std::vector<DMPData> &dmp_list,
 				  std::vector<std::vector<double>> obstacle,
 				  std::vector<double> beta,
 				  std::vector<double> gamma,
-				  std::vector<double>k);
+				  std::vector<double> k,
+				  double m,
+				  double n);
+
+Eigen::Vector3d calculate_bounding_box_dimensions(const std::vector<std::vector<double>>& points);
+
+
 }
+
+
 #endif /* DMP_H_ */

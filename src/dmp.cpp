@@ -163,7 +163,9 @@ void artificialPotentialFieldCoupling(vector<double> &apf_ct,
 									  const vector<vector<double>> &o, 
 									  vector<double> &beta, 
 									  vector<double> &gamma,
-									  vector<double> &k) 
+									  vector<double> &k,
+									  double m,
+									  double n) 
 {
 
 	Eigen::Vector3d x_e(x[0], x[1], x[2]); 
@@ -180,6 +182,8 @@ void artificialPotentialFieldCoupling(vector<double> &apf_ct,
 		apf_ct_e = gamma[0] * R * v_e * theta * std::exp(-beta[0] * theta) * std::exp(-k[0] * o_diff.norm());
 	}
 	else {
+		Eigen::Vector3d dim_e = calculate_bounding_box_dimensions(o); 
+		//std::cout<<dim[0]<<" "<<dim[1]<<" "<<dim[2]<<std::endl;
 
 		Eigen::MatrixXd ov_e = verticesVectorToEigen(o);
 		Eigen::Vector3d oc_e = calculateCentroid(ov_e);
@@ -217,12 +221,44 @@ void artificialPotentialFieldCoupling(vector<double> &apf_ct,
 	
 		// Obstacle centroid point without angle
 		apf_ct_e += gamma[2]*R*v_e*std::exp(-k[2]*op_diff.norm());
+
+		// Scale the coupling with the object bounding box dimensions
+		Eigen::Vector3d dim_s_e(n+m*dim_e.x(), n+m*dim_e.y(), n+m*dim_e.y()); 
+		apf_ct_e=apf_ct_e.array() * dim_s_e.array();
 		
 	}
 
 	apf_ct.push_back(apf_ct_e.x());
 	apf_ct.push_back(apf_ct_e.y());
 	apf_ct.push_back(apf_ct_e.z());
+}
+
+Eigen::Vector3d calculate_bounding_box_dimensions(const std::vector<std::vector<double>>& points) {
+    // Check if the points vector is not empty
+    if (points.empty() || points[0].empty()) {
+        std::cerr << "Error: Empty input points vector." << std::endl;
+        return {};
+    }
+
+    // Calculate min and max values for each dimension
+    std::vector<double> min_values = points[0];
+    std::vector<double> max_values = points[0];
+
+    for (const auto& point : points) {
+        for (size_t i = 0; i < point.size(); ++i) {
+            min_values[i] = std::min(min_values[i], point[i]);
+            max_values[i] = std::max(max_values[i], point[i]);
+        }
+    }
+
+    // Calculate dimensions
+    std::vector<double> dimensions;
+    for (size_t i = 0; i < min_values.size(); ++i) {
+        dimensions.push_back(max_values[i] - min_values[i]);
+    }
+
+	Eigen::Vector3d dim(dimensions[0],dimensions[1],dimensions[2]);
+    return dim;
 }
 
 Eigen::Vector3d calculateCentroid(const Eigen::MatrixXd& points) 
@@ -306,7 +342,9 @@ void generatePlan(const vector<DMPData> &dmp_list,
 				  vector<vector<double>> obstacle,
 				  vector<double> beta,
 				  vector<double> gamma,
-				  vector<double> k)
+				  vector<double> k,
+				  double m,
+				  double n)
 {
 	plan.points.clear();
 	plan.times.clear();
@@ -353,7 +391,7 @@ void generatePlan(const vector<DMPData> &dmp_list,
 				x_avd={x_vecs[0][n_pts-1],x_vecs[1][n_pts-1],x_vecs[2][n_pts-1]};
 				v_avd={x_dot_vecs[0][n_pts-1]*tau,x_dot_vecs[1][n_pts-1]*tau,x_dot_vecs[2][n_pts-1]*tau};
 			}
-			artificialPotentialFieldCoupling(apf_ct,x_avd,v_avd, obstacle, beta ,gamma, k);
+			artificialPotentialFieldCoupling(apf_ct,x_avd,v_avd, obstacle, beta ,gamma, k, m, n);
 			if(dims==6)
 				apf_ct.resize(6,0.0);
 		}		

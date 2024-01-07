@@ -22,7 +22,7 @@ bool planCallback(GetDMPPlan::Request  &req,
 		obstacle.push_back(req.obstacle);
 	generatePlan(active_dmp_list, req.x_0, req.x_dot_0, req.t_0, req.goal, req.goal_thresh,
 			     req.seg_length, req.tau, req.dt, req.integrate_iter, res.plan, res.at_goal, 
-				 obstacle, req.beta, req.gamma, req.k);
+				 obstacle, req.beta, req.gamma, req.k, req.scale_m, req.scale_n);
 	return true;
 }
 

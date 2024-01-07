@@ -38,6 +38,10 @@ float64[] gamma
 
 float64[] k
 
+float64 scale_m
+
+float64 scale_n
+
 ---
 
 # Returns a planned trajectory. 
